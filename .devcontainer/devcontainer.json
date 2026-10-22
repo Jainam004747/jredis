@@ -1,0 +1,10 @@
+{
+  "name": "jredis",
+  "image": "mcr.microsoft.com/devcontainers/universal:latest",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y redis-tools",
+  "forwardPorts": [6380, 8080],
+  "portsAttributes": {
+    "6380": { "label": "jredis" },
+    "8080": { "label": "jredis console", "onAutoForward": "openBrowser" }
+  }
+}

@@ -1,0 +1,326 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>jredis Console</title>
+<style>
+  /* Layout: sidebar key browser + detail pane + command console underneath. Colors are tokens. */
+  :root {
+    --bg: #f4f6f8; --panel: #ffffff; --fg: #1b2330; --muted: #5d6878; --line: #dde2e9;
+    --accent: #c4302b; --accent-soft: #fbe9e8; --ok: #1e8a4c; --warn: #b26a00;
+    --string: #2f6fd6; --list: #8a4fd1; --hash: #c4302b; --set: #1e8a4c; --zset: #b26a00;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #11151b; --panel: #1a2029; --fg: #e5e9ef; --muted: #98a3b3; --line: #2b3440;
+            --accent: #ff6b5f; --accent-soft: #3a1f1e; --ok: #5fd18e; --warn: #f2b25a;
+            --string: #7aa7ff; --list: #b98cff; --hash: #ff8178; --set: #5fd18e; --zset: #f2b25a; }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.45 var(--sans); display: flex; flex-direction: column; }
+  header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: -0.01em; }
+  header h1 b { color: var(--accent); }
+  .status { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--accent); }
+  .stats { margin-left: auto; display: flex; gap: 18px; font-size: 13px; color: var(--muted); flex-wrap: wrap; }
+  .stats b { color: var(--fg); font-variant-numeric: tabular-nums; }
+  main { flex: 1; display: grid; grid-template-columns: minmax(240px, 320px) minmax(0, 1fr); min-height: 0; }
+  aside { border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .search { padding: 10px; display: flex; gap: 6px; border-bottom: 1px solid var(--line); }
+  input, select, textarea, button { font: inherit; color: inherit; }
+  input, select, textarea { background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 7px 9px; width: 100%; }
+  textarea { font-family: var(--mono); font-size: 13px; resize: vertical; min-height: 90px; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  button { border: 1px solid var(--line); background: var(--panel); border-radius: 6px; padding: 7px 12px; cursor: pointer; white-space: nowrap; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.danger { color: var(--accent); }
+  button:hover { filter: brightness(0.96); }
+  #keyList { list-style: none; margin: 0; padding: 0; overflow: auto; flex: 1; }
+  #keyList li { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--line); cursor: pointer; }
+  #keyList li:hover { background: var(--bg); }
+  #keyList li.active { background: var(--accent-soft); }
+  .kname { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); font-size: 13px; }
+  .badge { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; padding: 2px 6px; border-radius: 4px; color: #fff; flex: none; width: 50px; text-align: center; }
+  .t-string { background: var(--string); } .t-list { background: var(--list); } .t-hash { background: var(--hash); }
+  .t-set { background: var(--set); } .t-zset { background: var(--zset); }
+  .ttl { font-size: 11px; color: var(--warn); font-variant-numeric: tabular-nums; flex: none; }
+  .side-foot { padding: 10px; border-top: 1px solid var(--line); display: flex; gap: 6px; }
+  .side-foot button { flex: 1; }
+  .empty { color: var(--muted); padding: 16px; }
+  .content { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-height: 0; }
+  #detail { overflow: auto; padding: 18px 22px; }
+  #detail h2 { margin: 0 0 4px; font-family: var(--mono); font-size: 18px; word-break: break-all; }
+  .meta { display: flex; gap: 12px; align-items: center; color: var(--muted); margin-bottom: 16px; flex-wrap: wrap; }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); width: 140px; overflow: hidden; }
+  .bar i { display: block; height: 100%; background: var(--warn); }
+  .value-box { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-family: var(--mono); white-space: pre-wrap; word-break: break-word; }
+  table { border-collapse: collapse; width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line); font-family: var(--mono); font-size: 13px; word-break: break-word; }
+  th { white-space: nowrap; font-family: var(--sans); color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  td.num { font-variant-numeric: tabular-nums; width: 1%; white-space: nowrap; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-family: var(--mono); font-size: 13px; }
+  .actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+  .actions input { width: 120px; }
+  form.add { display: grid; gap: 10px; max-width: 560px; }
+  form.add label { display: grid; gap: 4px; font-size: 13px; color: var(--muted); }
+  .hint { font-size: 12px; color: var(--muted); }
+  .err { color: var(--accent); }
+  #console { border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; max-height: 40vh; }
+  #out { overflow: auto; padding: 8px 14px; font-family: var(--mono); font-size: 13px; white-space: pre-wrap; min-height: 70px; max-height: 26vh; }
+  #out .cmd { color: var(--muted); }
+  #out .error { color: var(--accent); }
+  #cmdForm { display: flex; gap: 8px; padding: 8px 14px 12px; }
+  #cmdForm input { font-family: var(--mono); }
+  @media (max-width: 720px) {
+    main { grid-template-columns: minmax(0, 1fr); grid-template-rows: 40vh minmax(0, 1fr); }
+    aside { border-right: 0; border-bottom: 1px solid var(--line); }
+    .stats { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1><b>j</b>redis Console</h1>
+  <span class="status"><span class="dot" id="dot"></span><span id="statusText">connecting…</span></span>
+  <div class="stats">
+    <span>Keys <b id="sKeys">–</b></span>
+    <span>Clients <b id="sClients">–</b></span>
+    <span>Memory <b id="sMem">–</b></span>
+    <span>Commands <b id="sCmds">–</b></span>
+    <span>Uptime <b id="sUp">–</b></span>
+  </div>
+</header>
+<main>
+  <aside>
+    <div class="search">
+      <input id="pattern" placeholder="Search keys, e.g. user:*" aria-label="Key pattern" value="*">
+    </div>
+    <ul id="keyList" aria-label="Keys"></ul>
+    <div class="side-foot">
+      <button class="primary" id="addBtn">+ Add key</button>
+      <button id="refreshBtn">Refresh</button>
+    </div>
+  </aside>
+  <div class="content">
+    <section id="detail" aria-live="polite"></section>
+    <section id="console" aria-label="Command console">
+      <div id="out"><span class="cmd">Type any command below, e.g. SET greeting hello · GET greeting · INFO</span>
+</div>
+      <form id="cmdForm"><input id="cmd" autocomplete="off" placeholder="> command" aria-label="Command"><button class="primary">Run</button></form>
+    </section>
+  </div>
+</main>
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const state = { keys: [], selected: null, loadedAt: 0, history: [], hIdx: 0 };
+
+async function api(path, opts = {}) {
+  const res = await fetch(path, opts);
+  const body = await res.json();
+  if (!res.ok || body.error === true && body.reply === undefined) throw new Error(body.error || res.statusText);
+  if (typeof body.error === "string") throw new Error(body.error);
+  return body;
+}
+const post = (path, data) => api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
+
+function el(tag, attrs = {}, ...children) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") e.className = v; else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v);
+  }
+  for (const c of children) e.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return e;
+}
+function fmtTtl(ms) {
+  if (ms < 0) return "";
+  const s = Math.ceil(ms / 1000);
+  if (s < 60) return s + "s";
+  if (s < 3600) return Math.floor(s / 60) + "m " + (s % 60) + "s";
+  return Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m";
+}
+function fmtBytes(n) {
+  n = Number(n);
+  if (n > 1 << 30) return (n / (1 << 30)).toFixed(1) + " GB";
+  if (n > 1 << 20) return (n / (1 << 20)).toFixed(1) + " MB";
+  return Math.round(n / 1024) + " KB";
+}
+function fmtUptime(s) { s = Number(s); return s < 3600 ? Math.floor(s / 60) + "m" : Math.floor(s / 3600) + "h " + Math.floor((s % 3600) / 60) + "m"; }
+function remaining(ttlAtLoad) { return ttlAtLoad < 0 ? -1 : ttlAtLoad - (Date.now() - state.loadedAt); }
+
+async function loadInfo() {
+  try {
+    const i = await api("/api/info");
+    $("dot").className = "dot on";
+    $("statusText").textContent = "Connected " + i.target + " (" + i.mode + (i.aof ? ", AOF on" : "") + ")";
+    $("sKeys").textContent = i.keys; $("sClients").textContent = i.clients;
+    $("sMem").textContent = fmtBytes(i.memory); $("sCmds").textContent = i.commands; $("sUp").textContent = fmtUptime(i.uptime);
+  } catch (e) {
+    $("dot").className = "dot off";
+    $("statusText").textContent = "Not connected: " + e.message;
+  }
+}
+
+async function loadKeys() {
+  try {
+    const r = await api("/api/keys?pattern=" + encodeURIComponent($("pattern").value || "*"));
+    state.keys = r.keys; state.loadedAt = Date.now();
+    renderKeys(r.truncated);
+  } catch (e) {
+    $("keyList").replaceChildren(el("li", { class: "empty" }, e.message));
+  }
+}
+
+function renderKeys(truncated) {
+  const list = $("keyList");
+  if (!state.keys.length) {
+    list.replaceChildren(el("li", { class: "empty" }, "No keys match. Use “+ Add key” or the console to create one."));
+    return;
+  }
+  list.replaceChildren(...state.keys.map(k => {
+    const li = el("li", { tabindex: "0", class: k.key === state.selected ? "active" : "", onclick: () => select(k.key),
+      onkeydown: ev => { if (ev.key === "Enter") select(k.key); } },
+      el("span", { class: "badge t-" + k.type }, k.type),
+      el("span", { class: "kname", title: k.key }, k.key),
+      el("span", { class: "ttl", "data-ttl": k.ttl }, fmtTtl(remaining(k.ttl))));
+    return li;
+  }));
+  if (truncated) list.append(el("li", { class: "empty" }, "Showing the first 500 keys. Narrow the search."));
+}
+
+function tickTtls() {
+  for (const span of document.querySelectorAll("#keyList .ttl")) {
+    const left = remaining(Number(span.dataset.ttl));
+    span.textContent = Number(span.dataset.ttl) < 0 ? "" : (left > 0 ? "⏱ " + fmtTtl(left) : "expired");
+  }
+  const bar = document.querySelector("#detail .bar i");
+  const label = $("ttlLabel");
+  if (bar && label) {
+    const left = Math.max(0, Number(bar.dataset.ttl) - (Date.now() - Number(bar.dataset.at)));
+    bar.style.width = Math.min(100, left / Number(bar.dataset.ttl) * 100) + "%";
+    label.textContent = left > 0 ? "expires in " + fmtTtl(left) : "expired";
+  }
+}
+
+async function select(name) {
+  state.selected = name;
+  renderKeys();
+  try { renderDetail(await api("/api/key?name=" + encodeURIComponent(name))); }
+  catch (e) { $("detail").replaceChildren(el("p", { class: "err" }, e.message)); }
+}
+
+function renderDetail(k) {
+  const d = $("detail");
+  if (k.type === "none") {
+    d.replaceChildren(el("p", { class: "empty" }, "“" + k.key + "” no longer exists (it may have expired)."));
+    return;
+  }
+  const meta = el("div", { class: "meta" }, el("span", { class: "badge t-" + k.type }, k.type));
+  if (k.ttl >= 0) {
+    const bar = el("div", { class: "bar" }, el("i", { "data-ttl": k.ttl, "data-at": Date.now(), style: "width:100%" }));
+    meta.append(el("span", { id: "ttlLabel" }, "expires in " + fmtTtl(k.ttl)), bar);
+  } else meta.append(el("span", {}, "no expiry"));
+  let view;
+  if (k.type === "string") view = el("div", { class: "value-box" }, k.value);
+  else if (k.type === "list") view = table(["#", "item"], k.value.map((v, i) => [i, v]));
+  else if (k.type === "hash") view = table(["field", "value"], k.value);
+  else if (k.type === "zset") view = table(["rank", "member", "score"], k.value.map((p, i) => [i + 1, p[0], p[1]]));
+  else if (k.type === "set") view = el("div", { class: "chips" }, ...k.value.map(v => el("span", { class: "chip" }, v)));
+  const ttlInput = el("input", { type: "number", min: "0", placeholder: "seconds", "aria-label": "Expire in seconds" });
+  const actions = el("div", { class: "actions" },
+    ttlInput,
+    el("button", { onclick: async () => { await post("/api/expire", { key: k.key, seconds: ttlInput.value || "0" }); refresh(k.key); } }, "Set expiry"),
+    el("button", { onclick: async () => { await post("/api/expire", { key: k.key, seconds: "0" }); refresh(k.key); } }, "Remove expiry"),
+    el("button", { onclick: () => showAdd(k) }, "Edit"),
+    el("button", { class: "danger", onclick: async () => { await api("/api/key?name=" + encodeURIComponent(k.key), { method: "DELETE" }); state.selected = null; $("detail").replaceChildren(); loadKeys(); loadInfo(); } }, "Delete"));
+  d.replaceChildren(el("h2", {}, k.key), meta, view, actions);
+}
+
+function table(head, rows) {
+  return el("table", {}, el("thead", {}, el("tr", {}, ...head.map(h => el("th", {}, h)))),
+    el("tbody", {}, ...rows.map(r => el("tr", {}, ...r.map((c, i) => el("td", { class: i === 0 && typeof c === "number" ? "num" : "" }, c))))));
+}
+
+const HINTS = {
+  string: "Any text.",
+  list: "One item per line, in order.",
+  set: "One member per line (duplicates are ignored).",
+  hash: "One field=value per line, e.g. name=Jainam",
+  zset: "One “score member” per line, e.g. 100 alice"
+};
+function showAdd(existing) {
+  const type = el("select", { id: "fType" }, ...Object.keys(HINTS).map(t => el("option", { value: t }, t)));
+  const name = el("input", { id: "fKey", placeholder: "e.g. user:42", required: "" });
+  const value = el("textarea", { id: "fVal" });
+  const ttl = el("input", { id: "fTtl", type: "number", min: "0", placeholder: "optional, seconds" });
+  const hint = el("span", { class: "hint" }, HINTS.string);
+  const msg = el("p", { class: "err" });
+  type.addEventListener("change", () => hint.textContent = HINTS[type.value]);
+  if (existing) {
+    name.value = existing.key; type.value = existing.type; hint.textContent = HINTS[existing.type];
+    const v = existing.value;
+    value.value = existing.type === "string" ? v : existing.type === "hash" ? v.map(p => p[0] + "=" + p[1]).join("\n")
+      : existing.type === "zset" ? v.map(p => p[1] + " " + p[0]).join("\n") : v.join("\n");
+    if (existing.ttl > 0) ttl.value = Math.ceil(existing.ttl / 1000);
+  }
+  const form = el("form", { class: "add" },
+    el("h2", {}, existing ? "Edit key" : "Add a key"),
+    el("label", {}, "Key name", name),
+    el("label", {}, "Type", type),
+    el("label", {}, "Value", value, hint),
+    el("label", {}, "Delete automatically after (seconds)", ttl),
+    el("div", { class: "actions" }, el("button", { class: "primary" }, "Save"), el("button", { type: "button", onclick: () => $("detail").replaceChildren() }, "Cancel")),
+    msg);
+  form.addEventListener("submit", async ev => {
+    ev.preventDefault();
+    try {
+      const k = await post("/api/key", { key: name.value, type: type.value, value: value.value, ttl: ttl.value });
+      state.selected = k.key; await loadKeys(); renderDetail(k); loadInfo();
+    } catch (e) { msg.textContent = e.message; }
+  });
+  $("detail").replaceChildren(form);
+  name.focus();
+}
+
+async function refresh(key) { await loadKeys(); if (key) select(key); loadInfo(); }
+
+function print(text, cls) {
+  const out = $("out");
+  out.append(el("span", { class: cls || "" }, text + "\n"));
+  out.scrollTop = out.scrollHeight;
+}
+$("cmdForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const line = $("cmd").value.trim();
+  if (!line) return;
+  state.history.push(line); state.hIdx = state.history.length;
+  $("cmd").value = "";
+  print("> " + line, "cmd");
+  try {
+    const r = await post("/api/command", { command: line });
+    print(r.reply, r.error ? "error" : "");
+  } catch (e) { print("(error) " + e.message, "error"); }
+  loadKeys(); loadInfo();
+  if (state.selected) select(state.selected);
+});
+$("cmd").addEventListener("keydown", ev => {
+  if (ev.key === "ArrowUp" && state.hIdx > 0) { $("cmd").value = state.history[--state.hIdx]; ev.preventDefault(); }
+  if (ev.key === "ArrowDown") { state.hIdx = Math.min(state.history.length, state.hIdx + 1); $("cmd").value = state.history[state.hIdx] || ""; }
+});
+let searchTimer;
+$("pattern").addEventListener("input", () => { clearTimeout(searchTimer); searchTimer = setTimeout(loadKeys, 250); });
+$("addBtn").addEventListener("click", () => showAdd(null));
+$("refreshBtn").addEventListener("click", () => refresh(state.selected));
+
+loadInfo(); loadKeys();
+setInterval(tickTtls, 1000);
+setInterval(() => { loadInfo(); loadKeys(); }, 5000);
+</script>
+</body>
+</html>

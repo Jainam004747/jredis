@@ -21,8 +21,6 @@ dependencies {
 
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    // This dependency is used by the application.
-    implementation(libs.guava)
 }
 
 // Apply a specific Java toolchain to ease working on different environments.
@@ -40,4 +38,12 @@ application {
 tasks.named<Test>("test") {
     // Use JUnit Platform for unit tests.
     useJUnitPlatform()
+    testLogging {
+        events("passed", "skipped", "failed")
+    }
+}
+
+// The interactive server reads from stdin-less sockets; let `./gradlew run` pass the port etc.
+tasks.named<JavaExec>("run") {
+    standardInput = System.`in`
 }

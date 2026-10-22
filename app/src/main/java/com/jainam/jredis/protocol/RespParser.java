@@ -147,7 +147,7 @@ public final class RespParser {
     }
 
     /** Splits an inline line on whitespace, honouring "double" and 'single' quotes. */
-    static List<String> splitInline(String line) {
+    public static List<String> splitInline(String line) {
         List<String> out = new ArrayList<>();
         StringBuilder cur = new StringBuilder();
         boolean inToken = false;

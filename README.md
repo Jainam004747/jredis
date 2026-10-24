@@ -109,4 +109,4 @@ Read more:
 
 ## Built with
 
-Java standard library only: `java.nio` for networking and `com.sun.net.httpserver` for the console. Gradle and JUnit 5 for build and tests. Developed with AI assistance (Claude) as a learning project.
+Java standard library only: `java.nio` for networking and `com.sun.net.httpserver` for the console. Gradle and JUnit 5 for build and tests.

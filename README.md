@@ -63,6 +63,57 @@ redis-benchmark -p 6380 -q -t set,get -n 100000
 | `--appendfsync` | `everysec` | `always`, `everysec` or `no` |
 | `--save-on-shutdown` | `yes` | Write a snapshot on Ctrl+C |
 
+## Output
+
+A real session with the official `redis-cli` talking to jredis:
+
+```text
+$ redis-cli -p 6390
+127.0.0.1:6390> SET drink "double double"
+OK
+127.0.0.1:6390> GET drink
+"double double"
+127.0.0.1:6390> SET promo "free donut" EX 60
+OK
+127.0.0.1:6390> TTL promo
+(integer) 60
+127.0.0.1:6390> INCR visits
+(integer) 1
+127.0.0.1:6390> INCR visits
+(integer) 2
+127.0.0.1:6390> LPUSH orders latte
+(integer) 1
+127.0.0.1:6390> LPUSH orders bagel
+(integer) 2
+127.0.0.1:6390> LRANGE orders 0 -1
+1) "bagel"
+2) "latte"
+127.0.0.1:6390> ZADD scores 100 alice 250 bob 175 carol
+(integer) 3
+127.0.0.1:6390> ZREVRANGE scores 0 -1 WITHSCORES
+1) "bob"
+2) "250"
+3) "carol"
+4) "175"
+5) "alice"
+6) "100"
+127.0.0.1:6390> ZRANK scores carol
+(integer) 1
+127.0.0.1:6390> GET nothing
+(nil)
+127.0.0.1:6390> LPUSH drink oops
+(error) WRONGTYPE Operation against a key holding the wrong kind of value
+```
+
+Server log on start:
+
+```text
+INFO: jredis (event loop mode) listening on port 6390
+jredis is ready: connect with  redis-cli -p 6390  or  nc localhost 6390
+```
+
+`redis-benchmark -q -t get -c 50` against it: `GET: 79365.08 requests per second, p50=0.447 msec`. More numbers in [BENCHMARKS.md](docs/BENCHMARKS.md).
+
 ## Tests
 
 ```bash
